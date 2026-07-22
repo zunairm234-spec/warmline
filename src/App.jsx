@@ -892,12 +892,24 @@ export default function App() {
                   clients
                 }
 
+                userName={
+                  session?.user?.user_metadata?.full_name ||
+                  session?.user?.user_metadata?.name ||
+                  ""
+                }
+
                 onOpenClient={
                   openClient
                 }
 
-                onLogContact={
-                  logContact
+                onNewClient={() =>
+                  setShowNewModal(
+                    true
+                  )
+                }
+
+                onNavigate={
+                  setView
                 }
               />
 
