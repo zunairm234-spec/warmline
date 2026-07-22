@@ -429,6 +429,8 @@ export default function App() {
         "Client updated"
       );
 
+      return savedClient;
+
 
     } catch (error) {
 
@@ -441,6 +443,8 @@ export default function App() {
       showToast(
         "Couldn't update client."
       );
+
+      throw error;
 
     }
 
@@ -652,6 +656,8 @@ export default function App() {
         "Logged as contacted today"
       );
 
+      return updatedClient;
+
 
     } catch (error) {
 
@@ -664,6 +670,8 @@ export default function App() {
       showToast(
         "Couldn't log contact."
       );
+
+      throw error;
 
     }
 

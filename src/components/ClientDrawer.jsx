@@ -20,6 +20,9 @@ import {
   StickyNote,
   ArrowLeft,
   CalendarClock,
+  Pencil,
+  X,
+  Users,
 } from "lucide-react";
 
 import ColdClock from "./ui/ColdClock";
@@ -35,6 +38,7 @@ import {
   isoDate,
   formatDate,
   uid,
+  money,
 } from "../lib/helpers";
 
 import {
@@ -55,6 +59,38 @@ const CHANNEL_ICONS = {
   linkedin: Linkedin,
 };
 
+const EDITABLE_FIELDS = [
+  "name",
+  "company",
+  "industry",
+  "email",
+  "phone",
+  "whatsapp",
+  "linkedin",
+  "address",
+  "leadSource",
+  "dealValue",
+  "priority",
+  "stage",
+  "nextFollowUpDate",
+  "notes",
+  "tags",
+];
+
+function copyClientDraft(client) {
+  return {
+    ...client,
+    tags: [...(client.tags || [])],
+  };
+}
+
+function getEditableSnapshot(client) {
+  return EDITABLE_FIELDS.reduce((snapshot, key) => {
+    snapshot[key] = client[key];
+    return snapshot;
+  }, {});
+}
+
 export default function ClientDrawer({
   client,
   initialTab,
@@ -72,6 +108,12 @@ export default function ClientDrawer({
 
   const [form, setForm] =
     useState(client);
+
+  const [isEditing, setIsEditing] =
+    useState(false);
+
+  const [saveError, setSaveError] =
+    useState("");
 
   const [newActivity, setNewActivity] =
     useState({
@@ -113,6 +155,8 @@ export default function ClientDrawer({
 
   useEffect(() => {
     setForm(client);
+    setIsEditing(false);
+    setSaveError("");
 
     setInsight(
       client.aiInsight ||
@@ -127,6 +171,11 @@ export default function ClientDrawer({
 
   }, [client.id]);
 
+  const hasUnsavedChanges =
+    isEditing &&
+    JSON.stringify(getEditableSnapshot(form)) !==
+      JSON.stringify(getEditableSnapshot(client));
+
 
   // ==========================================
   // CLIENT AGE
@@ -137,6 +186,28 @@ export default function ClientDrawer({
       client.lastContactDate
     );
 
+  const today =
+    isoDate(
+      new Date()
+    );
+
+  const followUpOverdue =
+    form.nextFollowUpDate &&
+    form.nextFollowUpDate <= today;
+
+  const overviewFields = [
+    ["Full name", form.name],
+    ["Company", form.company],
+    ["Industry", form.industry],
+    ["Email", form.email],
+    ["Phone", form.phone],
+    ["Website", form.website],
+    ["Lead source", form.leadSource],
+    ["Created", form.createdAt ? formatDate(form.createdAt.slice(0, 10)) : ""],
+    ["Last contact", form.lastContactDate ? formatDate(form.lastContactDate) : ""],
+    ["Next follow-up", form.nextFollowUpDate ? formatDate(form.nextFollowUpDate) : ""],
+  ].filter(([, value]) => value);
+
 
   // ==========================================
   // UPDATE FIELD
@@ -146,14 +217,81 @@ export default function ClientDrawer({
     key,
     value
   ) {
+    if (!isEditing) {
+      return;
+    }
+
     const updated = {
       ...form,
       [key]: value,
     };
 
     setForm(updated);
+    setSaveError("");
+  }
 
-    onUpdate(updated);
+  function startEditing() {
+    setForm(copyClientDraft(client));
+    setSaveError("");
+    setIsEditing(true);
+  }
+
+  function cancelEditing() {
+    if (hasUnsavedChanges && !window.confirm("Discard your unsaved changes?")) {
+      return;
+    }
+
+    setForm(copyClientDraft(client));
+    setSaveError("");
+    setIsEditing(false);
+  }
+
+  async function saveChanges() {
+    setSaveError("");
+
+    try {
+      const savedClient = await onUpdate(form);
+
+      setForm(copyClientDraft(savedClient || form));
+      setIsEditing(false);
+    } catch (error) {
+      setSaveError(
+        error.message ||
+          "Could not save changes. Please try again."
+      );
+    }
+  }
+
+  function requestClose() {
+    if (
+      hasUnsavedChanges &&
+      !window.confirm("Discard your unsaved changes and close this client?")
+    ) {
+      return;
+    }
+
+    onClose();
+  }
+
+  async function logContactToday() {
+    setSaveError("");
+
+    try {
+      const savedClient = await onLogContact(client.id);
+
+      if (savedClient) {
+        setForm((current) => ({
+          ...current,
+          activityLog: savedClient.activityLog,
+          lastContactDate: savedClient.lastContactDate,
+        }));
+      }
+    } catch (error) {
+      setSaveError(
+        error.message ||
+          "Could not log contact today. Please try again."
+      );
+    }
   }
 
 
@@ -161,7 +299,7 @@ export default function ClientDrawer({
   // ADD ACTIVITY
   // ==========================================
 
-  function addActivity() {
+  async function addActivity() {
     if (
       !newActivity.note.trim()
     ) {
@@ -183,12 +321,12 @@ export default function ClientDrawer({
     };
 
     const updated = {
-      ...form,
+      ...client,
 
       activityLog: [
         entry,
 
-        ...(form.activityLog ||
+        ...(client.activityLog ||
           []),
       ],
 
@@ -198,14 +336,24 @@ export default function ClientDrawer({
         ),
     };
 
-    setForm(updated);
+    try {
+      const savedClient = await onUpdate(updated);
 
-    onUpdate(updated);
+      setForm((current) => ({
+        ...current,
+        aiInsight: (savedClient || updated).aiInsight,
+      }));
 
-    setNewActivity({
-      type: "Email",
-      note: "",
-    });
+      setNewActivity({
+        type: "Email",
+        note: "",
+      });
+    } catch (error) {
+      setSaveError(
+        error.message ||
+          "Could not log this activity. Please try again."
+      );
+    }
   }
 
 
@@ -274,15 +422,19 @@ export default function ClientDrawer({
       setInsight(text);
 
       const updated = {
-        ...form,
+        ...client,
 
         aiInsight:
           text,
       };
 
-      setForm(updated);
+      const savedClient = await onUpdate(updated);
 
-      onUpdate(updated);
+      setForm((current) => ({
+        ...current,
+        activityLog: (savedClient || updated).activityLog,
+        lastContactDate: (savedClient || updated).lastContactDate,
+      }));
 
     } catch (error) {
       console.error(
@@ -331,7 +483,7 @@ export default function ClientDrawer({
   return (
     <div
       className="drawer-overlay"
-      onClick={onClose}
+      onClick={requestClose}
     >
       <div
         className="drawer"
@@ -346,7 +498,7 @@ export default function ClientDrawer({
 
           <button
             className="btn btn-ghost btn-sm"
-            onClick={onClose}
+            onClick={requestClose}
           >
             <ArrowLeft
               size={16}
@@ -357,13 +509,37 @@ export default function ClientDrawer({
 
           <div className="drawer-head-actions">
 
+            {isEditing ? (
+              <>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={cancelEditing}
+                >
+                  <X size={14} />
+                  Cancel
+                </button>
+
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={saveChanges}
+                >
+                  <Check size={14} />
+                  Save Changes
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={startEditing}
+              >
+                <Pencil size={14} />
+                Edit
+              </button>
+            )}
+
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() =>
-                onLogContact(
-                  client.id
-                )
-              }
+              onClick={logContactToday}
             >
               <Clock
                 size={14}
@@ -440,6 +616,20 @@ export default function ClientDrawer({
 
             </div>
 
+            <div className="drawer-deal-summary">
+              {form.dealValue > 0 && (
+                <span>
+                  {money(form.dealValue)} deal
+                </span>
+              )}
+
+              {form.leadSource && (
+                <span>
+                  From {form.leadSource}
+                </span>
+              )}
+            </div>
+
           </div>
 
         </div>
@@ -462,7 +652,7 @@ export default function ClientDrawer({
               )
             }
           >
-            Details
+            Overview
           </button>
 
           <button
@@ -495,10 +685,17 @@ export default function ClientDrawer({
               size={13}
             />
 
-            AI Assistant
+            AI & Follow-up
           </button>
 
         </div>
+
+        {saveError && (
+          <div className="drawer-save-error">
+            <AlertCircle size={14} />
+            {saveError}
+          </div>
+        )}
 
 
         {/* ======================================
@@ -509,7 +706,118 @@ export default function ClientDrawer({
           "details" && (
           <div className="tab-panel">
 
+            <section className="workspace-section">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">Client 360</span>
+                  <h3>Overview</h3>
+                </div>
+                <span className="section-caption">Current relationship snapshot</span>
+              </div>
+
+              <div className="overview-grid">
+                {overviewFields.map(([label, value]) => (
+                  <div className="overview-item" key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="workspace-section sales-section">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">Sales</span>
+                  <h3>Deal information</h3>
+                </div>
+                <DollarSign size={16} />
+              </div>
+
+              <div className="sales-summary">
+                <div>
+                  <span>Deal value</span>
+                  <strong>{money(form.dealValue)}</strong>
+                </div>
+                <div>
+                  <span>Stage</span>
+                  <StagePill stage={form.stage} />
+                </div>
+                <div>
+                  <span>Priority</span>
+                  <PriorityPill priority={form.priority} />
+                </div>
+              </div>
+
+              <div className="stage-track" aria-label="Pipeline stage">
+                {STAGES.map((stage) => (
+                  <span
+                    key={stage}
+                    className={STAGES.indexOf(form.stage) >= STAGES.indexOf(stage) ? "stage-complete" : ""}
+                  />
+                ))}
+              </div>
+            </section>
+
+            <section className="workspace-section">
+              <div className="section-heading">
+                <div>
+                  <span className="section-kicker">Follow-up status</span>
+                  <h3>Relationship timing</h3>
+                </div>
+                {followUpOverdue && <span className="overdue-label">Overdue</span>}
+              </div>
+
+              <div className="follow-up-summary">
+                <div>
+                  <span>Last contacted</span>
+                  <strong>{form.lastContactDate ? formatDate(form.lastContactDate) : "Not provided"}</strong>
+                </div>
+                <div>
+                  <span>Days since contact</span>
+                  <strong>{form.lastContactDate ? days : "Not provided"}</strong>
+                </div>
+                <div>
+                  <span>Next follow-up</span>
+                  <strong className={followUpOverdue ? "text-overdue" : ""}>
+                    {form.nextFollowUpDate ? formatDate(form.nextFollowUpDate) : "Not scheduled"}
+                  </strong>
+                </div>
+              </div>
+            </section>
+
+            <div className="section-divider" />
+
+            <div className="section-heading edit-heading">
+              <div>
+                <span className="section-kicker">Edit</span>
+                <h3>Client details</h3>
+              </div>
+              <span className="section-caption">
+                {isEditing ? "Edit the draft, then save" : "Read-only until you edit"}
+              </span>
+            </div>
+
+            <fieldset
+              className="drawer-edit-fields"
+              disabled={!isEditing}
+            >
             <div className="form-grid">
+
+              <label className="field">
+                <span>
+                  <Users size={12} />
+                  Name
+                </span>
+
+                <input
+                  className="input"
+                  value={form.name || ""}
+                  onChange={(e) =>
+                    field("name", e.target.value)
+                  }
+                />
+              </label>
 
               <label className="field">
                 <span>
@@ -531,6 +839,21 @@ export default function ClientDrawer({
                       "company",
                       e.target.value
                     )
+                  }
+                />
+              </label>
+
+              <label className="field">
+                <span>
+                  <Tag size={12} />
+                  Industry
+                </span>
+
+                <input
+                  className="input"
+                  value={form.industry || ""}
+                  onChange={(e) =>
+                    field("industry", e.target.value)
                   }
                 />
               </label>
@@ -831,6 +1154,16 @@ export default function ClientDrawer({
             </div>
 
 
+            <div className="section-divider" />
+
+            <div className="section-heading edit-heading">
+              <div>
+                <span className="section-kicker">Context</span>
+                <h3>Notes</h3>
+              </div>
+              <StickyNote size={16} />
+            </div>
+
             <label className="field field-full">
 
               <span>
@@ -893,6 +1226,8 @@ export default function ClientDrawer({
 
             </label>
 
+            </fieldset>
+
           </div>
         )}
 
@@ -904,6 +1239,16 @@ export default function ClientDrawer({
         {tab ===
           "activity" && (
           <div className="tab-panel">
+
+            <div className="section-heading">
+              <div>
+                <span className="section-kicker">History</span>
+                <h3>Activity timeline</h3>
+              </div>
+              <span className="section-caption">
+                {(form.activityLog || []).length} logged
+              </span>
+            </div>
 
             <div className="activity-add">
 
@@ -983,7 +1328,7 @@ export default function ClientDrawer({
             </div>
 
 
-            <div className="activity-list">
+            <div className="activity-list activity-timeline">
 
               {(
                 form.activityLog ||
@@ -996,10 +1341,15 @@ export default function ClientDrawer({
               )}
 
 
-              {(
-                form.activityLog ||
-                []
-              ).map((activity) => (
+              {[
+                ...(form.activityLog || []),
+              ]
+                .sort((a, b) =>
+                  String(b.date || "").localeCompare(
+                    String(a.date || "")
+                  )
+                )
+                .map((activity) => (
 
                 <div
                   className="activity-row"
@@ -1028,7 +1378,7 @@ export default function ClientDrawer({
 
                 </div>
 
-              ))}
+                ))}
 
             </div>
 
@@ -1042,6 +1392,14 @@ export default function ClientDrawer({
 
         {tab === "ai" && (
           <div className="tab-panel">
+
+            <div className="section-heading ai-workspace-heading">
+              <div>
+                <span className="section-kicker">Workspace</span>
+                <h3>AI insights and next action</h3>
+              </div>
+              <Sparkles size={17} />
+            </div>
 
             {/* PRIORITY INSIGHT */}
 
