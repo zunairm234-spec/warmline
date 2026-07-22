@@ -11,6 +11,7 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import ClientsView from "./components/ClientsView";
 import PipelineView from "./components/PipelineView";
+import ComingSoonView from "./components/ComingSoonView";
 import ClientDrawer from "./components/ClientDrawer";
 import NewClientModal from "./components/NewClientModal";
 import ImportClientsModal from "./components/ImportClientsModal";
@@ -838,6 +839,10 @@ export default function App() {
           )
         }
 
+        settingsOpen={
+          showSettings
+        }
+
         theme={
           theme
         }
@@ -933,6 +938,21 @@ export default function App() {
 
                 onChangeStage={
                   changeStage
+                }
+              />
+
+            )}
+
+            {![
+              "dashboard",
+              "clients",
+              "pipeline",
+            ].includes(view) && (
+
+              <ComingSoonView
+                view={view}
+                onBackToDashboard={() =>
+                  setView("dashboard")
                 }
               />
 
