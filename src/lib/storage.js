@@ -3,7 +3,12 @@ import { supabase } from "../Supabase.js";
 import {
   API_KEY_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  DEFAULT_AI_SETTINGS,
 } from "./constants.js";
+
+// Dedicated key for AI settings — separate from API_KEY_STORAGE_KEY to avoid
+// the two colliding (one is a plain string, the other a JSON object).
+const AI_SETTINGS_STORAGE_KEY = "warmline:ai-settings";
 
 // ============================================================
 // GET CURRENT USER
@@ -572,8 +577,11 @@ export async function bulkCreateClients(
 }
 
 // ============================================================
-// AI API KEY
+// AI API KEY (LEGACY — currently unused by App.jsx)
 // ============================================================
+// Not called anywhere in the live app (only referenced in the unused
+// App.backup.jsx). Kept for backward compatibility; safe to delete
+// once you confirm nothing else needs it.
 
 export function loadApiKey() {
   try {
@@ -648,46 +656,79 @@ export function saveTheme(
     return false;
   }
 }
-// ==========================================
+
+// ============================================================
 // AI SETTINGS
-// ==========================================
+// ============================================================
+// Single source of truth for defaults is DEFAULT_AI_SETTINGS in
+// constants.js — no model name is hardcoded here anymore.
 
 export function loadAISettings() {
   try {
-    const saved = localStorage.getItem(
-      API_KEY_STORAGE_KEY
+    // One-time migration: earlier versions saved AI settings under
+    // API_KEY_STORAGE_KEY, colliding with the plain API key string.
+    // If nothing exists under the new dedicated key yet, check the
+    // old key, migrate it over, then clean up.
+    const current = localStorage.getItem(
+      AI_SETTINGS_STORAGE_KEY
     );
 
-    if (!saved) {
+    if (current) {
       return {
-        provider: "gemini",
-        model: "gemini-2.5-flash",
-        apiKey: "",
+        ...DEFAULT_AI_SETTINGS,
+        ...JSON.parse(current),
       };
     }
 
-    return JSON.parse(saved);
+    const legacy = localStorage.getItem(
+      API_KEY_STORAGE_KEY
+    );
+
+    if (legacy) {
+      try {
+        const parsedLegacy = JSON.parse(legacy);
+
+        // Only migrate if it actually looks like a settings object
+        // (has a provider/model), not a raw API key string.
+        if (parsedLegacy && typeof parsedLegacy === "object" && parsedLegacy.provider) {
+          const migrated = {
+            ...DEFAULT_AI_SETTINGS,
+            ...parsedLegacy,
+          };
+
+          localStorage.setItem(
+            AI_SETTINGS_STORAGE_KEY,
+            JSON.stringify(migrated)
+          );
+
+          localStorage.removeItem(
+            API_KEY_STORAGE_KEY
+          );
+
+          return migrated;
+        }
+      } catch {
+        // legacy value wasn't JSON (probably a raw API key string) — ignore
+      }
+    }
+
+    return { ...DEFAULT_AI_SETTINGS };
   } catch (error) {
     console.error(
       "Failed to load AI settings:",
       error
     );
 
-    return {
-      provider: "gemini",
-      model: "gemini-2.5-flash",
-      apiKey: "",
-    };
+    return { ...DEFAULT_AI_SETTINGS };
   }
 }
-
 
 export function saveAISettings(
   settings
 ) {
   try {
     localStorage.setItem(
-      API_KEY_STORAGE_KEY,
+      AI_SETTINGS_STORAGE_KEY,
       JSON.stringify(settings)
     );
 
