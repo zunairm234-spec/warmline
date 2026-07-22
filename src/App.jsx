@@ -11,6 +11,7 @@ import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import ClientsView from "./components/ClientsView";
 import PipelineView from "./components/PipelineView";
+import TasksView from "./components/TasksView";
 import ComingSoonView from "./components/ComingSoonView";
 import ClientDrawer from "./components/ClientDrawer";
 import NewClientModal from "./components/NewClientModal";
@@ -23,6 +24,11 @@ import {
   updateClient as updateClientInDatabase,
   deleteClient as deleteClientFromDatabase,
   bulkCreateClients,
+  loadTasks,
+  createTask as createTaskInDatabase,
+  updateTask as updateTaskInDatabase,
+  completeTask as completeTaskInDatabase,
+  deleteTask as deleteTaskFromDatabase,
   loadApiKey,
   saveApiKey,
   loadAISettings,
@@ -61,6 +67,9 @@ export default function App() {
   // ==========================================
 
   const [clients, setClients] =
+    useState([]);
+
+  const [tasks, setTasks] =
     useState([]);
 
   const [loaded, setLoaded] =
@@ -193,9 +202,28 @@ export default function App() {
         const userClients =
           await loadClients();
 
+        let userTasks = [];
+
+        try {
+          userTasks = await loadTasks();
+        } catch (taskError) {
+          console.error(
+            "Failed to load tasks:",
+            taskError
+          );
+
+          showToast(
+            "Tasks are unavailable until the Tasks table is created in Supabase."
+          );
+        }
+
 
         setClients(
           userClients
+        );
+
+        setTasks(
+          userTasks
         );
 
 
@@ -390,6 +418,136 @@ export default function App() {
 
     }
 
+  }
+
+  // ==========================================
+  // TASKS
+  // ==========================================
+
+  async function createTask(task) {
+    const savedTask =
+      await createTaskInDatabase(task);
+
+    setTasks(
+      (currentTasks) => [
+        savedTask,
+        ...currentTasks,
+      ]
+    );
+
+    showToast("Task created");
+
+    return savedTask;
+  }
+
+  async function updateTask(task) {
+    const savedTask =
+      await updateTaskInDatabase(task);
+
+    setTasks(
+      (currentTasks) =>
+        currentTasks.map(
+          (currentTask) =>
+            currentTask.id === task.id
+              ? savedTask
+              : currentTask
+        )
+    );
+
+    showToast("Task updated");
+
+    return savedTask;
+  }
+
+  async function completeTask(task) {
+    const shouldComplete =
+      task.status !== "completed";
+
+    const savedTask =
+      await completeTaskInDatabase(
+        task.id,
+        shouldComplete
+      );
+
+    setTasks(
+      (currentTasks) =>
+        currentTasks.map(
+          (currentTask) =>
+            currentTask.id === task.id
+              ? savedTask
+              : currentTask
+        )
+    );
+
+    if (
+      shouldComplete &&
+      task.clientId
+    ) {
+      const client =
+        clients.find(
+          (currentClient) =>
+            currentClient.id === task.clientId
+        );
+
+      const alreadyLogged =
+        client?.activityLog?.some(
+          (activity) =>
+            activity.type === "task_completed" &&
+            activity.taskId === task.id
+        );
+
+      if (client && !alreadyLogged) {
+        const updatedClient = {
+          ...client,
+          activityLog: [
+            {
+              id: uid(),
+              date: isoDate(new Date()),
+              type: "task_completed",
+              note: `Completed task: ${task.title}`,
+              taskId: task.id,
+            },
+            ...(client.activityLog || []),
+          ],
+        };
+
+        const savedClient =
+          await updateClientInDatabase(
+            updatedClient
+          );
+
+        setClients(
+          (currentClients) =>
+            currentClients.map(
+              (currentClient) =>
+                currentClient.id === client.id
+                  ? savedClient
+                  : currentClient
+            )
+        );
+      }
+    }
+
+    showToast(
+      shouldComplete
+        ? "Task completed"
+        : "Task reopened"
+    );
+
+    return savedTask;
+  }
+
+  async function deleteTask(id) {
+    await deleteTaskFromDatabase(id);
+
+    setTasks(
+      (currentTasks) =>
+        currentTasks.filter(
+          (task) => task.id !== id
+        )
+    );
+
+    showToast("Task deleted");
   }
 
 
@@ -963,10 +1121,25 @@ export default function App() {
 
             )}
 
+            {view ===
+              "tasks" && (
+
+              <TasksView
+                tasks={tasks}
+                clients={clients}
+                onCreateTask={createTask}
+                onUpdateTask={updateTask}
+                onCompleteTask={completeTask}
+                onDeleteTask={deleteTask}
+              />
+
+            )}
+
             {![
               "dashboard",
               "clients",
               "pipeline",
+              "tasks",
             ].includes(view) && (
 
               <ComingSoonView
@@ -1002,6 +1175,18 @@ export default function App() {
           aiSettings={
             aiSettings
           }
+
+          tasks={
+            tasks.filter(
+              (task) =>
+                task.clientId === selectedClient.id
+            )
+          }
+
+          onCreateTask={createTask}
+          onUpdateTask={updateTask}
+          onCompleteTask={completeTask}
+          onDeleteTask={deleteTask}
 
           onClose={() =>
             setSelectedId(

@@ -578,6 +578,163 @@ export async function bulkCreateClients(
 }
 
 // ============================================================
+// TASKS
+// ============================================================
+
+function mapTask(task) {
+  if (!task) return null;
+
+  return {
+    id: task.id,
+    userId: task.user_id,
+    clientId: task.client_id || null,
+    title: task.title || "",
+    description: task.description || "",
+    status: task.status || "open",
+    priority: task.priority || "medium",
+    dueDate: task.due_date || null,
+    completedAt: task.completed_at || null,
+    source: task.source || "manual",
+    createdAt: task.created_at,
+    updatedAt: task.updated_at,
+  };
+}
+
+function taskRow(task) {
+  return {
+    title: String(task.title || "").trim(),
+    description: String(task.description || "").trim() || null,
+    client_id: task.clientId || null,
+    status: task.status === "completed" ? "completed" : "open",
+    priority: ["high", "medium", "low"].includes(task.priority)
+      ? task.priority
+      : "medium",
+    due_date: task.dueDate || null,
+    completed_at: task.status === "completed"
+      ? task.completedAt || new Date().toISOString()
+      : null,
+    source: ["manual", "ai", "automation"].includes(task.source)
+      ? task.source
+      : "manual",
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export async function loadTasks() {
+  const user = await getCurrentUser();
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("user_id", user.id)
+    .order("status", { ascending: true })
+    .order("due_date", { ascending: true, nullsFirst: false })
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Failed to load tasks:", error);
+    throw error;
+  }
+
+  return (data || []).map(mapTask);
+}
+
+export async function createTask(task) {
+  const user = await getCurrentUser();
+  const title = String(task.title || "").trim();
+
+  if (!title) {
+    throw new Error("Task title is required.");
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      user_id: user.id,
+      ...taskRow({
+        ...task,
+        title,
+        status: "open",
+        completedAt: null,
+      }),
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Failed to create task:", error);
+    throw error;
+  }
+
+  return mapTask(data);
+}
+
+export async function updateTask(task) {
+  const user = await getCurrentUser();
+  const title = String(task.title || "").trim();
+
+  if (!title) {
+    throw new Error("Task title is required.");
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .update(taskRow({ ...task, title }))
+    .eq("id", task.id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Failed to update task:", error);
+    throw error;
+  }
+
+  return mapTask(data);
+}
+
+export async function completeTask(id, shouldComplete = true) {
+  const user = await getCurrentUser();
+  const completedAt = shouldComplete ? new Date().toISOString() : null;
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .update({
+      status: shouldComplete ? "completed" : "open",
+      completed_at: completedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Failed to complete task:", error);
+    throw error;
+  }
+
+  return mapTask(data);
+}
+
+export async function deleteTask(id) {
+  const user = await getCurrentUser();
+
+  const { error } = await supabase
+    .from("tasks")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) {
+    console.error("Failed to delete task:", error);
+    throw error;
+  }
+
+  return true;
+}
+
+// ============================================================
 // AI API KEY (LEGACY — currently unused by App.jsx)
 // ============================================================
 // Not called anywhere in the live app (only referenced in the unused

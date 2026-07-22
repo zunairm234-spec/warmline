@@ -23,6 +23,9 @@ import {
   Pencil,
   X,
   Users,
+  Circle,
+  ListChecks,
+  Edit3,
 } from "lucide-react";
 
 import ColdClock from "./ui/ColdClock";
@@ -99,6 +102,11 @@ export default function ClientDrawer({
   onUpdate,
   onDelete,
   onLogContact,
+  tasks,
+  onCreateTask,
+  onUpdateTask,
+  onCompleteTask,
+  onDeleteTask,
 }) {
   const [tab, setTab] =
     useState(
@@ -147,6 +155,21 @@ export default function ClientDrawer({
 
   const [copied, setCopied] =
     useState(false);
+
+  const [newTaskTitle, setNewTaskTitle] =
+    useState("");
+
+  const [newTaskDueDate, setNewTaskDueDate] =
+    useState("");
+
+  const [taskError, setTaskError] =
+    useState("");
+
+  const [editingTaskId, setEditingTaskId] =
+    useState(null);
+
+  const [taskDraft, setTaskDraft] =
+    useState(null);
 
 
   // ==========================================
@@ -291,6 +314,75 @@ export default function ClientDrawer({
         error.message ||
           "Could not log contact today. Please try again."
       );
+    }
+  }
+
+  async function createClientTask(event) {
+    event.preventDefault();
+    setTaskError("");
+
+    if (!newTaskTitle.trim()) {
+      setTaskError("Add a task title first.");
+      return;
+    }
+
+    try {
+      await onCreateTask({
+        title: newTaskTitle,
+        dueDate: newTaskDueDate || null,
+        clientId: client.id,
+        description: "",
+        priority: "medium",
+        source: "manual",
+      });
+
+      setNewTaskTitle("");
+      setNewTaskDueDate("");
+    } catch (error) {
+      setTaskError(error.message || "Could not create task.");
+    }
+  }
+
+  function beginTaskEdit(task) {
+    setTaskError("");
+    setEditingTaskId(task.id);
+    setTaskDraft({ ...task });
+  }
+
+  function cancelTaskEdit() {
+    setEditingTaskId(null);
+    setTaskDraft(null);
+  }
+
+  async function saveTaskEdit() {
+    setTaskError("");
+
+    try {
+      await onUpdateTask(taskDraft);
+      cancelTaskEdit();
+    } catch (error) {
+      setTaskError(error.message || "Could not save task changes.");
+    }
+  }
+
+  async function toggleClientTask(task) {
+    setTaskError("");
+
+    try {
+      await onCompleteTask(task);
+    } catch (error) {
+      setTaskError(error.message || "Could not update task.");
+    }
+  }
+
+  async function removeClientTask(task) {
+    if (!window.confirm(`Delete task "${task.title}"?`)) return;
+    setTaskError("");
+
+    try {
+      await onDeleteTask(task.id);
+    } catch (error) {
+      setTaskError(error.message || "Could not delete task.");
     }
   }
 
@@ -669,6 +761,20 @@ export default function ClientDrawer({
             }
           >
             Activity
+          </button>
+
+          <button
+            className={`tab-btn ${
+              tab === "tasks"
+                ? "tab-active"
+                : ""
+            }`}
+            onClick={() =>
+              setTab("tasks")
+            }
+          >
+            <ListChecks size={13} />
+            Tasks
           </button>
 
           <button
@@ -1382,6 +1488,141 @@ export default function ClientDrawer({
 
             </div>
 
+          </div>
+        )}
+
+        {tab === "tasks" && (
+          <div className="tab-panel client-tasks-panel">
+            <div className="section-heading">
+              <div>
+                <span className="section-kicker">Client work</span>
+                <h3>Tasks</h3>
+              </div>
+              <span className="section-caption">
+                {(tasks || []).filter((task) => task.status === "open").length} open
+              </span>
+            </div>
+
+            <form className="client-task-quick-add" onSubmit={createClientTask}>
+              <input
+                className="input"
+                placeholder="Add a task for this client"
+                value={newTaskTitle}
+                onChange={(event) => setNewTaskTitle(event.target.value)}
+              />
+              <input
+                className="input"
+                type="date"
+                value={newTaskDueDate}
+                onChange={(event) => setNewTaskDueDate(event.target.value)}
+                aria-label="Optional task due date"
+              />
+              <button className="btn btn-primary btn-sm" type="submit">
+                <Plus size={13} /> New Task
+              </button>
+            </form>
+
+            {taskError && (
+              <div className="drawer-save-error">
+                <AlertCircle size={14} />
+                {taskError}
+              </div>
+            )}
+
+            <div className="client-task-list">
+              {(!tasks || tasks.length === 0) && (
+                <div className="empty-state small">
+                  <ListChecks size={24} strokeWidth={1.6} />
+                  No tasks for this client yet.
+                </div>
+              )}
+
+              {(tasks || []).map((task) => {
+                const overdue =
+                  task.status === "open" &&
+                  task.dueDate &&
+                  task.dueDate < today;
+
+                if (editingTaskId === task.id) {
+                  return (
+                    <div className="client-task-edit" key={task.id}>
+                      <input
+                        className="input"
+                        value={taskDraft.title}
+                        onChange={(event) =>
+                          setTaskDraft({ ...taskDraft, title: event.target.value })
+                        }
+                      />
+                      <textarea
+                        className="textarea"
+                        rows={2}
+                        placeholder="Description (optional)"
+                        value={taskDraft.description || ""}
+                        onChange={(event) =>
+                          setTaskDraft({ ...taskDraft, description: event.target.value })
+                        }
+                      />
+                      <div className="task-edit-grid">
+                        <select
+                          className="select"
+                          value={taskDraft.priority}
+                          onChange={(event) =>
+                            setTaskDraft({ ...taskDraft, priority: event.target.value })
+                          }
+                        >
+                          <option value="high">High priority</option>
+                          <option value="medium">Medium priority</option>
+                          <option value="low">Low priority</option>
+                        </select>
+                        <input
+                          className="input"
+                          type="date"
+                          value={taskDraft.dueDate || ""}
+                          onChange={(event) =>
+                            setTaskDraft({ ...taskDraft, dueDate: event.target.value || null })
+                          }
+                        />
+                      </div>
+                      <div className="task-edit-actions">
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={cancelTaskEdit}>
+                          <X size={13} /> Cancel
+                        </button>
+                        <button className="btn btn-primary btn-sm" type="button" onClick={saveTaskEdit}>
+                          <Check size={13} /> Save Changes
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className={`client-task-row ${task.status === "completed" ? "task-row-completed" : ""}`} key={task.id}>
+                    <button
+                      className="task-complete-button"
+                      onClick={() => toggleClientTask(task)}
+                      aria-label={task.status === "completed" ? "Reopen task" : "Complete task"}
+                    >
+                      {task.status === "completed" ? <Check size={14} /> : <Circle size={16} />}
+                    </button>
+                    <div className="client-task-content">
+                      <strong>{task.title}</strong>
+                      {task.description && <span>{task.description}</span>}
+                      <small className={overdue ? "task-due-overdue" : ""}>
+                        {task.dueDate ? formatDate(task.dueDate) : "No due date"}
+                        {overdue ? " · Overdue" : ""}
+                      </small>
+                    </div>
+                    <span className={`task-priority task-priority-${task.priority}`}>{task.priority}</span>
+                    <button className="icon-btn" onClick={() => beginTaskEdit(task)} title="Edit task">
+                      <Edit3 size={14} />
+                    </button>
+                    <button className="icon-btn task-delete" onClick={() => removeClientTask(task)} title="Delete task">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
