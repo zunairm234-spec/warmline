@@ -4,6 +4,7 @@ import {
   API_KEY_STORAGE_KEY,
   THEME_STORAGE_KEY,
   DEFAULT_AI_SETTINGS,
+  normalizeGeminiModel,
 } from "./constants.js";
 
 // Dedicated key for AI settings — separate from API_KEY_STORAGE_KEY to avoid
@@ -674,10 +675,30 @@ export function loadAISettings() {
     );
 
     if (current) {
-      return {
+      const settings = {
         ...DEFAULT_AI_SETTINGS,
         ...JSON.parse(current),
       };
+
+      if (settings.provider === "gemini") {
+        const normalizedModel =
+          normalizeGeminiModel(settings.model);
+        const migratedModel =
+          normalizedModel === "gemini-2.5-flash"
+            ? DEFAULT_AI_SETTINGS.model
+            : normalizedModel;
+
+        if (migratedModel !== settings.model) {
+          settings.model = migratedModel;
+
+          localStorage.setItem(
+            AI_SETTINGS_STORAGE_KEY,
+            JSON.stringify(settings)
+          );
+        }
+      }
+
+      return settings;
     }
 
     const legacy = localStorage.getItem(
@@ -695,6 +716,16 @@ export function loadAISettings() {
             ...DEFAULT_AI_SETTINGS,
             ...parsedLegacy,
           };
+
+          if (migrated.provider === "gemini") {
+            const normalizedModel =
+              normalizeGeminiModel(migrated.model);
+
+            migrated.model =
+              normalizedModel === "gemini-2.5-flash"
+                ? DEFAULT_AI_SETTINGS.model
+                : normalizedModel;
+          }
 
           localStorage.setItem(
             AI_SETTINGS_STORAGE_KEY,
@@ -727,9 +758,24 @@ export function saveAISettings(
   settings
 ) {
   try {
+    const settingsToSave = {
+      ...settings,
+    };
+
+    if (settingsToSave.provider === "gemini") {
+      const normalizedModel = normalizeGeminiModel(
+        settingsToSave.model
+      );
+
+      settingsToSave.model =
+        normalizedModel === "gemini-2.5-flash"
+          ? DEFAULT_AI_SETTINGS.model
+          : normalizedModel;
+    }
+
     localStorage.setItem(
       AI_SETTINGS_STORAGE_KEY,
-      JSON.stringify(settings)
+      JSON.stringify(settingsToSave)
     );
 
     return true;

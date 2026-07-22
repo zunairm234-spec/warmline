@@ -10,6 +10,7 @@ import {
 import {
   AI_PROVIDERS,
   DEFAULT_AI_SETTINGS,
+  normalizeGeminiModel,
 } from "../lib/constants";
 
 
@@ -72,12 +73,16 @@ export default function SettingsModal({
   // ==========================================
 
   function handleSave() {
+    const model =
+      settings.provider === "gemini"
+        ? normalizeGeminiModel(settings.model)
+        : settings.model.trim();
+
     onSave({
       provider:
         settings.provider,
 
-      model:
-        settings.model.trim(),
+      model,
 
       apiKey:
         settings.apiKey.trim(),

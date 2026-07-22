@@ -34,7 +34,7 @@ export const CHANNELS = [
 
 export const DEFAULT_AI_SETTINGS = {
   provider: "gemini",
-  model: "gemini-2.0-flash",
+  model: "gemini-3.6-flash",
   apiKey: "",
 };
 
@@ -42,7 +42,7 @@ export const AI_PROVIDERS = [
   {
     id: "gemini",
     label: "Google Gemini",
-    defaultModel: "gemini-2.0-flash",
+    defaultModel: "gemini-3.6-flash",
   },
   {
     id: "anthropic",
@@ -57,3 +57,10 @@ export const AI_PROVIDERS = [
 ];
 
 export const AI_MODEL = DEFAULT_AI_SETTINGS.model;
+
+export function normalizeGeminiModel(model) {
+  return String(model || "")
+    .trim()
+    .replace(/^models\//, "")
+    .replace(/:generateContent$/, "");
+}

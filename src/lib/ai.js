@@ -148,9 +148,32 @@ export async function callAI(
  * ============================================================
  * GOOGLE GEMINI
  * ============================================================
+ *
+ * ============================================================
+ * GEMINI REQUEST
+ * ============================================================
  */
 
 async function callGemini(
+  prompt,
+  model,
+  apiKey
+) {
+  return callGeminiOnce(
+    prompt,
+    model,
+    apiKey
+  );
+}
+
+
+/**
+ * ============================================================
+ * SINGLE GEMINI REQUEST
+ * ============================================================
+ */
+
+async function callGeminiOnce(
   prompt,
   model,
   apiKey
@@ -203,7 +226,8 @@ async function callGemini(
         .catch(() => "");
 
     let message =
-      body;
+      body ||
+      "Unknown Gemini API error.";
 
     try {
       const parsed =
@@ -211,14 +235,21 @@ async function callGemini(
 
       message =
         parsed?.error?.message ||
-        body;
+        body ||
+        message;
     } catch {
       // Keep original response
     }
 
-    throw new Error(
-      `Gemini request failed (${response.status}). ${message}`
-    );
+    const error =
+      new Error(
+        message
+      );
+
+    error.geminiStatus =
+      response.status;
+
+    throw error;
   }
 
 
@@ -243,9 +274,15 @@ async function callGemini(
 
 
   if (!text) {
-    throw new Error(
-      "Gemini returned an empty response."
-    );
+    const error =
+      new Error(
+        "Gemini returned an empty response."
+      );
+
+    error.geminiStatus =
+      200;
+
+    throw error;
   }
 
 
